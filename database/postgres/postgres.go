@@ -6,6 +6,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	nurl "net/url"
@@ -41,6 +42,7 @@ var (
 	ErrNoDatabaseName = fmt.Errorf("no database name")
 	ErrNoSchema       = fmt.Errorf("no schema")
 	ErrDatabaseDirty  = fmt.Errorf("database is dirty")
+	ErrNoSuchRole     = fmt.Errorf("no such role")
 )
 
 type Config struct {
@@ -53,6 +55,7 @@ type Config struct {
 	migrationsTableName   string
 	StatementTimeout      time.Duration
 	MultiStatementMaxSize int
+	CustomRole            string
 }
 
 type Postgres struct {
@@ -104,6 +107,18 @@ func WithConnection(ctx context.Context, conn *sql.Conn, config *Config) (*Postg
 
 	if len(config.MigrationsTable) == 0 {
 		config.MigrationsTable = DefaultMigrationsTable
+	}
+
+	if config.CustomRole != "" {
+		var res int
+		query := `SELECT 1 FROM pg_roles WHERE rolname = $1`
+		if err := conn.QueryRowContext(ctx, query, config.CustomRole).Scan(&res); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, ErrNoSuchRole
+			}
+
+			return nil, &database.Error{OrigErr: err, Query: []byte(query)}
+		}
 	}
 
 	config.migrationsSchemaName = config.SchemaName
@@ -170,6 +185,7 @@ func (p *Postgres) Open(url string) (database.Driver, error) {
 			return nil, fmt.Errorf("Unable to parse option x-migrations-table-quoted: %w", err)
 		}
 	}
+
 	if (len(migrationsTable) > 0) && (migrationsTableQuoted) && ((migrationsTable[0] != '"') || (migrationsTable[len(migrationsTable)-1] != '"')) {
 		return nil, fmt.Errorf("x-migrations-table must be quoted (for instance '\"migrate\".\"schema_migrations\"') when x-migrations-table-quoted is enabled, current value is: %s", migrationsTable)
 	}
@@ -202,20 +218,20 @@ func (p *Postgres) Open(url string) (database.Driver, error) {
 		}
 	}
 
-	px, err := WithInstance(db, &Config{
+	var role string
+	if s := purl.Query().Get("x-custom-role"); len(s) > 0 {
+		role = s
+	}
+
+	return WithInstance(db, &Config{
 		DatabaseName:          purl.Path,
 		MigrationsTable:       migrationsTable,
 		MigrationsTableQuoted: migrationsTableQuoted,
 		StatementTimeout:      time.Duration(statementTimeout) * time.Millisecond,
 		MultiStatementEnabled: multiStatementEnabled,
 		MultiStatementMaxSize: multiStatementMaxSize,
+		CustomRole:            role,
 	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return px, nil
 }
 
 func (p *Postgres) Close() error {
@@ -277,10 +293,12 @@ func (p *Postgres) Run(migration io.Reader) error {
 		}
 		return err
 	}
+
 	migr, err := io.ReadAll(migration)
 	if err != nil {
 		return err
 	}
+
 	return p.runStatement(migr)
 }
 
@@ -291,31 +309,45 @@ func (p *Postgres) runStatement(statement []byte) error {
 		ctx, cancel = context.WithTimeout(ctx, p.config.StatementTimeout)
 		defer cancel()
 	}
+
+	if len(p.config.CustomRole) > 0 {
+		query := "SET ROLE " + p.config.CustomRole
+		if _, err := p.conn.ExecContext(ctx, query); err != nil {
+			return database.Error{OrigErr: err, Err: "unable to set role", Query: statement}
+		}
+	}
+
 	query := string(statement)
 	if strings.TrimSpace(query) == "" {
 		return nil
 	}
+
 	if _, err := p.conn.ExecContext(ctx, query); err != nil {
-		if pgErr, ok := err.(*pq.Error); ok {
-			var line uint
-			var col uint
+		var pgErr *pq.Error
+		if errors.As(err, &pgErr) {
+			var line, col uint
 			var lineColOK bool
 			if pgErr.Position != "" {
 				if pos, err := strconv.ParseUint(pgErr.Position, 10, 64); err == nil {
 					line, col, lineColOK = computeLineFromPos(query, int(pos))
 				}
 			}
+
 			message := fmt.Sprintf("migration failed: %s", pgErr.Message)
 			if lineColOK {
 				message = fmt.Sprintf("%s (column %d)", message, col)
 			}
+
 			if pgErr.Detail != "" {
 				message = fmt.Sprintf("%s, %s", message, pgErr.Detail)
 			}
+
 			return database.Error{OrigErr: err, Err: message, Query: statement, Line: line}
 		}
+
 		return database.Error{OrigErr: err, Err: "migration failed", Query: statement}
 	}
+
 	return nil
 }
 
