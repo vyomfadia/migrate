@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/golang-migrate/migrate/v4"
+	"github.com/vyomfadia/migrate"
 	"io"
 	"strconv"
 	"strings"
@@ -22,10 +22,10 @@ import (
 )
 
 import (
-	"github.com/golang-migrate/migrate/v4/database"
-	dt "github.com/golang-migrate/migrate/v4/database/testing"
-	"github.com/golang-migrate/migrate/v4/dktesting"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/vyomfadia/migrate/database"
+	dt "github.com/vyomfadia/migrate/database/testing"
+	"github.com/vyomfadia/migrate/dktesting"
+	_ "github.com/vyomfadia/migrate/source/file"
 )
 
 var (

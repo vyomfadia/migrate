@@ -19,10 +19,10 @@ import (
 
 	"github.com/dhui/dktest"
 	"github.com/go-sql-driver/mysql"
-	"github.com/golang-migrate/migrate/v4"
-	dt "github.com/golang-migrate/migrate/v4/database/testing"
-	"github.com/golang-migrate/migrate/v4/dktesting"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/vyomfadia/migrate"
+	dt "github.com/vyomfadia/migrate/database/testing"
+	"github.com/vyomfadia/migrate/dktesting"
+	_ "github.com/vyomfadia/migrate/source/file"
 	"github.com/stretchr/testify/assert"
 )
 

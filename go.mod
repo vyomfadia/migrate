@@ -1,4 +1,4 @@
-module github.com/golang-migrate/migrate/v4
+module github.com/vyomfadia/migrate
 
 go 1.18
 

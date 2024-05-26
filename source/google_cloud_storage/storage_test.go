@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/fsouza/fake-gcs-server/fakestorage"
-	"github.com/golang-migrate/migrate/v4/source"
-	st "github.com/golang-migrate/migrate/v4/source/testing"
+	"github.com/vyomfadia/migrate/source"
+	st "github.com/vyomfadia/migrate/source/testing"
 )
 
 func Test(t *testing.T) {
